@@ -1,0 +1,259 @@
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const STORAGE_KEY='habitTrackerData_v2';
+let state={year:new Date().getFullYear(),month:new Date().getMonth(),
+  habits:[
+    {id:uid(),name:'Learning',goal:25,checks:{}},
+    {id:uid(),name:'DSA',goal:25,checks:{}},
+    {id:uid(),name:'Spring',goal:25,checks:{}},
+    {id:uid(),name:'React',goal:25,checks:{}},
+    {id:uid(),name:'Exercise',goal:25,checks:{}},
+  ]};
+function uid(){return '_'+Math.random().toString(36).slice(2,9);}
+
+function saveData(){
+  state.year=parseInt(document.getElementById('selYear').value);
+  state.month=parseInt(document.getElementById('selMonth').value);
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+  showToast('✅ Saved!');
+}
+function loadData(){try{const r=localStorage.getItem(STORAGE_KEY);if(r)state=JSON.parse(r);}catch(e){}}
+function confirmReset(){
+  if(confirm('Reset ALL data for this month?')){
+    const key=`${state.year}-${state.month}`;
+    state.habits.forEach(h=>{Object.keys(h.checks).forEach(k=>{if(k.startsWith(key+'-'))delete h.checks[k];});});
+    saveData();rebuildAll();showToast('🗑 Cleared');
+  }
+}
+function getDaysInMonth(y,m){return new Date(y,m+1,0).getDate();}
+function getDayOfWeek(y,m,d){return new Date(y,m,d).getDay();}
+function ck(y,m,d){return `${y}-${m}-${d}`;}
+function isWknd(y,m,d){const w=getDayOfWeek(y,m,d);return w===0||w===6;}
+function isToday(y,m,d){const n=new Date();return n.getFullYear()===y&&n.getMonth()===m&&n.getDate()===d;}
+function progColor(p){if(p>=80)return'#10b981';if(p>=50)return'#06b6d4';if(p>=30)return'#f59e0b';return'#ef4444';}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+
+function calcStats(){
+  const{year,month,habits}=state;
+  const totalDays=getDaysInMonth(year,month);
+  const today=new Date();today.setHours(0,0,0,0);
+  const isCur=today.getFullYear()===year&&today.getMonth()===month;
+  const daysPassed=isCur?Math.min(today.getDate(),totalDays):(new Date(year,month,1)<today?totalDays:0);
+  let tc=0,tg=0;const dc=Array(totalDays).fill(0);
+  habits.forEach(h=>{let hc=0;for(let d=1;d<=totalDays;d++){if(h.checks[ck(year,month,d)]){hc++;dc[d-1]++;}}tc+=hc;tg+=h.goal;});
+  const sr=tg>0?Math.round((tc/tg)*100):0;
+  const mp=habits.length*totalDays>0?Math.round((tc/(habits.length*totalDays))*100):0;
+  const np=habits.length*daysPassed>0?Math.round((tc/(habits.length*daysPassed))*100):0;
+  const ls=Math.max(1,daysPassed-2);let lc=0,lm=0;
+  for(let d=ls;d<=daysPassed;d++)habits.forEach(h=>{lm++;if(h.checks[ck(year,month,d)])lc++;});
+  return{totalDays,daysPassed,totalChecked:tc,totalGoal:tg,dailyCounts:dc,successRate:sr,monthlyPct:mp,normalizedPct:np,momentumPct:lm>0?Math.round((lc/lm)*100):0};
+}
+
+function rebuildAll(){
+  state.year=parseInt(document.getElementById('selYear').value);
+  state.month=parseInt(document.getElementById('selMonth').value);
+  updateMeta();buildTableHead();buildTableBody();updateStats();saveData();
+}
+function updateMeta(){
+  const{year,month}=state;const td=getDaysInMonth(year,month);const mn=MONTHS[month];
+  document.getElementById('startDate').textContent=`${mn} 1, ${year}`;
+  document.getElementById('endDate').textContent=`${mn} ${td}, ${year}`;
+  document.getElementById('totalDaysNum').textContent=td;
+}
+function buildTableHead(){
+  const{year,month}=state;const td=getDaysInMonth(year,month);
+  let h='<tr><th class="hc">Habit</th><th class="gc2">Goal</th>';
+  for(let d=1;d<=td;d++){const t=isToday(year,month,d)?' tdy-hdr':'';h+=`<th class="dh${t}"><div>${d}</div></th>`;}
+  h+='<th class="pc">Progress</th></tr>';
+  document.getElementById('tableHead').innerHTML=h;
+}
+function buildTableBody(){
+  const{year,month,habits}=state;const td=getDaysInMonth(year,month);
+  let h='';
+  habits.forEach((hab,hi)=>{
+    let chk=0;for(let d=1;d<=td;d++){if(hab.checks[ck(year,month,d)])chk++;}
+    const pct=hab.goal>0?Math.min(100,Math.round((chk/hab.goal)*100)):0;
+    const col=progColor(pct);
+    h+=`<tr data-hi="${hi}">`;
+    h+=`<td class="hn-cell"><input class="hn-inp" value="${hab.name}" onchange="renameHabit(${hi},this.value)" onblur="saveData()"></td>`;
+    h+=`<td><input class="gi" type="number" min="1" max="31" value="${hab.goal}" onchange="changeGoal(${hi},this.value)"></td>`;
+    for(let d=1;d<=td;d++){
+      const isk=hab.checks[ck(year,month,d)]?' ck':'';
+      const iw=isWknd(year,month,d)?' wknd':'';
+      const it=isToday(year,month,d)?' tdy-col':'';
+      h+=`<td class="dc${isk}${iw}${it}" onclick="toggleCheck(${hi},${d})"></td>`;
+    }
+    h+=`<td class="prog-cell"><div class="pb-wrap">
+      <div class="pb-bg"><div class="pb-fill" style="width:${pct}%;background:${col};box-shadow:0 0 8px ${col}88;"></div></div>
+      <span class="pb-pct" style="color:${col}">${pct}%</span>
+      <button class="del-b" onclick="deleteHabit(${hi})">✕</button>
+    </div></td></tr>`;
+  });
+  document.getElementById('tableBody').innerHTML=h;
+}
+
+function updateStats(){
+  const s=calcStats();
+  document.getElementById('successPct').textContent=s.successRate+'%';
+  let icon='😐',msg='KEEP GOING';
+  if(s.successRate>=90){icon='🔥';msg='EXCELLENT!';}else if(s.successRate>=75){icon='💪';msg='GREAT JOB!';}
+  else if(s.successRate>=50){icon='😊';msg='GOOD PROGRESS';}else if(s.successRate>=25){icon='😐';msg='DO BETTER';}else{icon='😔';msg='START NOW!';}
+  document.getElementById('successIcon').textContent=icon;
+  document.getElementById('successMsg').textContent=msg;
+  document.getElementById('totalCompleted').textContent=`${s.totalChecked}/${s.totalGoal}`;
+  drawDonut('donut1',s.monthlyPct,'#c4b5fd');
+  drawDonut('donut2',s.normalizedPct,'#6ee7b7');
+  drawDonut('donut3',s.momentumPct,'#fde68a');
+  document.getElementById('d1pct').textContent=s.monthlyPct+'%';
+  document.getElementById('d2pct').textContent=s.normalizedPct+'%';
+  document.getElementById('d3pct').textContent=s.momentumPct+'%';
+  drawBarChart(s.dailyCounts,s.totalDays);
+  drawBottomBars(s.dailyCounts);
+}
+
+function drawDonut(id,pct,fill){
+  const c=document.getElementById(id);if(!c)return;
+  const ctx=c.getContext('2d');const dpr=window.devicePixelRatio||1;
+  const sz=86;c.width=sz*dpr;c.height=sz*dpr;c.style.width=sz+'px';c.style.height=sz+'px';
+  ctx.scale(dpr,dpr);const cx=sz/2,cy=sz/2,r=30;ctx.clearRect(0,0,sz,sz);
+  ctx.beginPath();ctx.arc(cx,cy,r,0,2*Math.PI);ctx.strokeStyle='rgba(255,255,255,0.09)';ctx.lineWidth=7;ctx.stroke();
+  if(pct>0){
+    ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+2*Math.PI*pct/100);
+    ctx.strokeStyle=fill;ctx.lineWidth=7;ctx.lineCap='round';ctx.stroke();
+    ctx.save();ctx.shadowColor=fill;ctx.shadowBlur=14;
+    ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+2*Math.PI*pct/100);
+    ctx.strokeStyle=fill;ctx.lineWidth=2;ctx.stroke();ctx.restore();
+  }
+}
+
+function drawBarChart(dc,td){
+  const c=document.getElementById('barChart');if(!c)return;
+  const ctx=c.getContext('2d');const dpr=window.devicePixelRatio||1;
+  const w=c.parentElement.clientWidth-28,h=150;
+  c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';
+  ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);
+  const pL=22,pR=8,pT=20,pB=26;
+  const cW=w-pL-pR,cH=h-pT-pB;
+  const mx=Math.max(...dc,1);
+  // Grid
+  for(let i=0;i<=mx;i++){
+    const y=pT+cH-(i/mx)*cH;
+    ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=1;
+    ctx.moveTo(pL,y);ctx.lineTo(w-pR,y);ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.28)';ctx.font='7px Outfit';ctx.textAlign='right';
+    ctx.fillText(i,pL-3,y+2.5);
+  }
+  const pts=dc.map((v,i)=>({
+    x:td>1?pL+(i/(td-1))*cW:pL+cW/2,
+    y:pT+cH-(v/mx)*cH,v
+  }));
+  // Area
+  ctx.save();ctx.beginPath();ctx.moveTo(pts[0].x,pT+cH);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x,pT+cH);ctx.closePath();
+  const ag=ctx.createLinearGradient(0,pT,0,pT+cH);
+  ag.addColorStop(0,'rgba(255,68,68,0.28)');ag.addColorStop(0.6,'rgba(255,140,0,0.1)');ag.addColorStop(1,'rgba(255,68,68,0.01)');
+  ctx.fillStyle=ag;ctx.fill();ctx.restore();
+  // Glow line
+  const lg=ctx.createLinearGradient(pL,0,w-pR,0);
+  lg.addColorStop(0,'#FFD700');lg.addColorStop(0.35,'#FF8C00');lg.addColorStop(0.65,'#FF4444');lg.addColorStop(1,'#FFD700');
+  ctx.save();ctx.shadowColor='rgba(255,210,0,0.65)';ctx.shadowBlur=10;
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle=lg;ctx.lineWidth=2.8;ctx.lineJoin='round';ctx.stroke();ctx.restore();
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle=lg;ctx.lineWidth=1.8;ctx.lineJoin='round';ctx.stroke();
+  // Dots
+  pts.forEach(p=>{
+    if(p.v>0){
+      ctx.beginPath();ctx.arc(p.x,p.y,5.5,0,Math.PI*2);ctx.fillStyle='rgba(255,68,68,0.22)';ctx.fill();
+      ctx.beginPath();ctx.arc(p.x,p.y,3.5,0,Math.PI*2);ctx.fillStyle='#FF4444';ctx.fill();
+      ctx.beginPath();ctx.arc(p.x,p.y,1.8,0,Math.PI*2);ctx.fillStyle='#FFD700';ctx.fill();
+      ctx.save();ctx.shadowColor='#FFD700';ctx.shadowBlur=8;
+      ctx.beginPath();ctx.arc(p.x,p.y,1.8,0,Math.PI*2);ctx.fillStyle='#FFD700';ctx.fill();ctx.restore();
+      ctx.fillStyle='#FFD700';ctx.font='bold 8px Outfit';ctx.textAlign='center';ctx.fillText(p.v,p.x,p.y-9);
+    }else{ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fill();}
+  });
+  const dn=document.getElementById('dayNumbers');
+  let html='';for(let d=1;d<=td;d++)html+=`<span style="flex:1;text-align:center">${d}</span>`;
+  dn.innerHTML=html;
+}
+
+function drawBottomBars(dc){
+  const cont=document.getElementById('bottomBarChart');
+  if(!state.habits.length){cont.innerHTML='';return;}
+  const weeks=[];
+  for(let i=0;i<dc.length;i+=7)weeks.push(dc.slice(i,i+7).reduce((a,b)=>a+b,0));
+  const mx=Math.max(...weeks,1);
+  cont.innerHTML=weeks.map((w,i)=>`<div class="bbc">
+    <div class="bbc-b" style="height:${Math.round((w/mx)*42)}px;min-height:3px"></div>
+    <div class="bbc-l">W${i+1}</div></div>`).join('');
+}
+
+function toggleCheck(hi,day){
+  const{year,month}=state;const k=ck(year,month,day);const h=state.habits[hi];
+  h.checks[k]=!h.checks[k];if(!h.checks[k])delete h.checks[k];
+  const rows=document.querySelectorAll('#tableBody tr');const row=rows[hi];
+  if(row){
+    const cells=row.querySelectorAll('.dc');const cell=cells[day-1];
+    if(cell)cell.classList.toggle('ck');
+    const td=getDaysInMonth(year,month);let chk=0;
+    for(let d=1;d<=td;d++){if(h.checks[ck(year,month,d)])chk++;}
+    const pct=h.goal>0?Math.min(100,Math.round((chk/h.goal)*100)):0;
+    const col=progColor(pct);
+    const fill=row.querySelector('.pb-fill');const ps=row.querySelector('.pb-pct');
+    if(fill){fill.style.width=pct+'%';fill.style.background=col;fill.style.boxShadow=`0 0 8px ${col}88`;}
+    if(ps){ps.textContent=pct+'%';ps.style.color=col;}
+  }
+  updateStats();saveData();
+}
+function renameHabit(hi,val){state.habits[hi].name=val.trim()||`Habit ${hi+1}`;}
+function changeGoal(hi,val){
+  state.habits[hi].goal=Math.max(1,Math.min(31,parseInt(val)||25));
+  buildTableBody();updateStats();saveData();
+}
+function deleteHabit(hi){
+  if(state.habits.length<=1){showToast('⚠️ Need at least 1 habit');return;}
+  state.habits.splice(hi,1);buildTableHead();buildTableBody();updateStats();saveData();showToast('Habit deleted');
+}
+function openAddModal(){
+  document.getElementById('newHabitName').value='';
+  document.getElementById('newHabitGoal').value='25';
+  document.getElementById('addModal').classList.add('open');
+  setTimeout(()=>document.getElementById('newHabitName').focus(),100);
+}
+function closeAddModal(){document.getElementById('addModal').classList.remove('open');}
+function addHabit(){
+  const name=document.getElementById('newHabitName').value.trim();
+  const goal=parseInt(document.getElementById('newHabitGoal').value)||25;
+  if(!name){document.getElementById('newHabitName').style.borderColor='#ef4444';return;}
+  state.habits.push({id:uid(),name,goal,checks:{}});
+  closeAddModal();buildTableHead();buildTableBody();updateStats();saveData();
+  showToast(`✅ "${name}" added!`);
+}
+function exportCSV(){
+  const{year,month,habits}=state;const td=getDaysInMonth(year,month);
+  let csv=`Habit Tracker - ${MONTHS[month]} ${year}\n\nHabit,Goal`;
+  for(let d=1;d<=td;d++)csv+=`,${d}`;csv+=',Done,%\n';
+  habits.forEach(h=>{
+    let row=`"${h.name}",${h.goal}`;let chk=0;
+    for(let d=1;d<=td;d++){const v=h.checks[ck(year,month,d)]?1:0;row+=`,${v}`;chk+=v;}
+    csv+=row+`,${chk},${Math.round((chk/h.goal)*100)}%\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`habits_${year}_${month+1}.csv`;a.click();showToast('📊 Exported!');
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')closeAddModal();
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveData();}
+});
+document.getElementById('addModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeAddModal();});
+document.getElementById('newHabitName').addEventListener('keydown',e=>{if(e.key==='Enter')addHabit();});
+
+function init(){
+  loadData();
+  document.getElementById('selYear').value=state.year;
+  document.getElementById('selMonth').value=state.month;
+  updateMeta();buildTableHead();buildTableBody();updateStats();
+}
+window.addEventListener('resize',()=>{const s=calcStats();drawBarChart(s.dailyCounts,s.totalDays);});
+init();
